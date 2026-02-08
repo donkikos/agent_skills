@@ -11,10 +11,11 @@ Use this skill when the user wants to connect to an *existing* Jupyter Server ke
 
 ## Minimal questions to ask
 Ask only what you can’t infer automatically:
-1) **Server URL** (host + port). If not provided, use `jupyter server list`.
+1) **Server URL** (optional): the script auto-discovers running servers with `jupyter server list` if `--base-url` is omitted.
 2) **Auth**: token or password. If a token appears in the server list URL, use it.
 3) **Kernel selection**: kernel ID, or a notebook path/name substring to match.
 4) **Code to run**.
+5) **Output style** (only when needed): normal output vs `--result-only` for clean value extraction.
 
 ## Workflow
 
@@ -23,35 +24,54 @@ Ask only what you can’t infer automatically:
 - Compute `SKILL_DIR` as the parent directory of `SKILL.md`.
 - Run scripts via absolute paths like `$SKILL_DIR/scripts/...` (don’t rely on CWD; `cd` into `SKILL_DIR` if needed).
 
-### 1) Discover the server (no abstraction)
-- Run `jupyter server list` (or `jupyter notebook list`) to get URL + token.
-- If none running, ask the user for URL and token/password.
+### 1) Discover server(s)
+- Preferred: let the script auto-discover servers by omitting `--base-url`.
+- Use explicit `--base-url` when you must target one specific server (host/port/base path).
+- If needed, inspect servers directly:
 
-### 2) Select kernel (minimal abstraction)
-Use the script to resolve a kernel by notebook path substring, or pass a kernel id directly. If multiple matches are found, the script exits with a message so you can ask a single follow‑up question.
+```bash
+jupyter server list
+```
 
-If you need to see all sessions, do it directly (no abstraction):
+### 2) Select kernel
+- Pass `--kernel-id` when known.
+- Otherwise use `--kernel-match <substring>`.
+- Matching checks both session `path` and `name`, and handles VS Code style notebook names like `to_accelerate_2-jvsc-...ipynb`.
+- For regex matching, use `--kernel-match "re:<pattern>"`.
+- If multiple matches are found, the script prints candidates with `kernel_id | server_url | path | name` so you can ask one follow-up question.
+
+If you need to inspect sessions manually:
 
 ```bash
 curl -s "<BASE_URL>/api/sessions?token=<TOKEN>" | python -m json.tool
 ```
 
 ### 3) Execute code on the chosen kernel
-Provide code inline, from a file, or via stdin (for multiline without temp files). Inline `--code` supports literal `\n` sequences for newlines, but `--code-stdin` is preferred for real multiline:
+Provide code inline, from a file, or via stdin (for multiline without temp files). Inline `--code` supports literal `\n` sequences for newlines, but `--code-stdin` is preferred for real multiline.
+
+Auto-discovery example:
 
 ```bash
 python "$SKILL_DIR/scripts/jupyter_kernel_exec.py" \
-  --base-url http://localhost:8080 \
+  --kernel-match to_accelerate_2.ipynb \
+  --code "1+1"
+```
+
+Explicit server example:
+
+```bash
+python "$SKILL_DIR/scripts/jupyter_kernel_exec.py" \
+  --base-url http://localhost:8090 \
   --token <TOKEN> \
   --kernel-id <KERNEL_ID> \
   --code "print('hello')"
 ```
 
-Or:
+File and stdin examples:
 
 ```bash
 python "$SKILL_DIR/scripts/jupyter_kernel_exec.py" \
-  --base-url http://localhost:8080 \
+  --base-url http://localhost:8090 \
   --token <TOKEN> \
   --kernel-id <KERNEL_ID> \
   --code-file /path/to/code.py
@@ -59,7 +79,7 @@ python "$SKILL_DIR/scripts/jupyter_kernel_exec.py" \
 
 ```bash
 cat <<'PY' | python "$SKILL_DIR/scripts/jupyter_kernel_exec.py" \
-  --base-url http://localhost:8080 \
+  --base-url http://localhost:8090 \
   --token <TOKEN> \
   --kernel-id <KERNEL_ID> \
   --code-stdin
@@ -67,17 +87,14 @@ print("hello from stdin")
 PY
 ```
 
-If the user gives a notebook name/path instead of a kernel ID, pass `--kernel-match <substring>` to select the matching session automatically. If multiple match, the script prints candidates and exits so you can ask a single follow‑up question.
-
-For regex matching, use `--kernel-match "re:<pattern>"`.
-
 ### 4) Return results
-The script prints:
+Default output can include:
 - `stream` output (stdout/stderr)
 - `execute_result` (text/plain)
-- `error` traceback (if any)
+- `display_data`
+- `error` traceback
 
-Summarize the output and show key lines. If the kernel is busy, wait for `status: idle` for the request’s `msg_id`.
+Use `--result-only` when you want only computed values from `execute_result` (plus errors).
 
 For structured output, pass `--json` to emit a single JSON summary. Use `--timeout <seconds>` to override the WebSocket read timeout.
 
@@ -85,4 +102,5 @@ For structured output, pass `--json` to emit a single JSON summary. Use `--timeo
 - **Secrets**: tokens are sensitive—don’t paste them into logs or commit them.
 - **Sandbox**: if localhost networking is blocked, rerun commands with escalated permissions.
 - **WebSocket dependency**: the script uses `websocket-client`. Install it in the active venv if missing.
-- **Base URL**: include any server base path (e.g., `http://host:port/user/name`). The script handles it.
+- **Base URL path**: include any server base path (e.g., `http://host:port/user/name`). The script handles it.
+- **No auto-discovered servers**: provide `--base-url` explicitly.
