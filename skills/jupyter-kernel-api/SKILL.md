@@ -18,6 +18,11 @@ Ask only what you can’t infer automatically:
 
 ## Workflow
 
+### 0) Resolve the skill directory (portable)
+- Use the skill’s file path (shown in the skill metadata/context) to locate resources.
+- Compute `SKILL_DIR` as the parent directory of `SKILL.md`.
+- Run scripts via absolute paths like `$SKILL_DIR/scripts/...` (don’t rely on CWD; `cd` into `SKILL_DIR` if needed).
+
 ### 1) Discover the server (no abstraction)
 - Run `jupyter server list` (or `jupyter notebook list`) to get URL + token.
 - If none running, ask the user for URL and token/password.
@@ -32,10 +37,10 @@ curl -s "<BASE_URL>/api/sessions?token=<TOKEN>" | python -m json.tool
 ```
 
 ### 3) Execute code on the chosen kernel
-Provide code inline, from a file, or via stdin (for multiline without temp files):
+Provide code inline, from a file, or via stdin (for multiline without temp files). Inline `--code` supports literal `\n` sequences for newlines, but `--code-stdin` is preferred for real multiline:
 
 ```bash
-python skills/jupyter-kernel-api/scripts/jupyter_kernel_exec.py \
+python "$SKILL_DIR/scripts/jupyter_kernel_exec.py" \
   --base-url http://localhost:8080 \
   --token <TOKEN> \
   --kernel-id <KERNEL_ID> \
@@ -45,14 +50,15 @@ python skills/jupyter-kernel-api/scripts/jupyter_kernel_exec.py \
 Or:
 
 ```bash
-python skills/jupyter-kernel-api/scripts/jupyter_kernel_exec.py \
+python "$SKILL_DIR/scripts/jupyter_kernel_exec.py" \
   --base-url http://localhost:8080 \
   --token <TOKEN> \
   --kernel-id <KERNEL_ID> \
   --code-file /path/to/code.py
+```
 
 ```bash
-cat <<'PY' | python skills/jupyter-kernel-api/scripts/jupyter_kernel_exec.py \
+cat <<'PY' | python "$SKILL_DIR/scripts/jupyter_kernel_exec.py" \
   --base-url http://localhost:8080 \
   --token <TOKEN> \
   --kernel-id <KERNEL_ID> \

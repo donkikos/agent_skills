@@ -98,7 +98,9 @@ def execute_code(
     try:
         import websocket  # type: ignore
     except Exception:
-        print("Missing dependency: websocket-client. Install with: pip install websocket-client")
+        print(
+            "Missing dependency: websocket-client. Install with: pip install websocket-client"
+        )
         sys.exit(2)
 
     ws_url = _build_ws_url(base_url, kernel_id, token)
@@ -192,19 +194,32 @@ def main() -> None:
         description="Execute code on an existing Jupyter kernel via API."
     )
     parser.add_argument(
-        "--base-url", required=True, help="Jupyter server base URL, e.g. http://localhost:8080"
+        "--base-url",
+        required=True,
+        help="Jupyter server base URL, e.g. http://localhost:8080",
     )
-    parser.add_argument("--token", default=None, help="Jupyter token (optional if server is open)")
+    parser.add_argument(
+        "--token", default=None, help="Jupyter token (optional if server is open)"
+    )
     parser.add_argument("--kernel-id", help="Kernel ID to execute against")
     parser.add_argument(
         "--kernel-match",
         help="Match session path to resolve kernel ID. Use 're:<pattern>' for regex.",
     )
-    parser.add_argument("--code", help="Inline code to execute")
+    parser.add_argument(
+        "--code",
+        help="Inline code to execute (literal \\n sequences are converted to newlines)",
+    )
     parser.add_argument("--code-file", help="Path to file with code to execute")
-    parser.add_argument("--code-stdin", action="store_true", help="Read code from stdin")
-    parser.add_argument("--timeout", type=int, default=60, help="WebSocket read timeout seconds")
-    parser.add_argument("--json", action="store_true", help="Emit JSON summary of outputs")
+    parser.add_argument(
+        "--code-stdin", action="store_true", help="Read code from stdin"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=60, help="WebSocket read timeout seconds"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Emit JSON summary of outputs"
+    )
     args = parser.parse_args()
 
     base_url = _normalize_base_url(args.base_url)
@@ -230,7 +245,7 @@ def main() -> None:
     elif args.code_stdin:
         code = sys.stdin.read()
     else:
-        code = args.code
+        code = args.code.replace("\\n", "\n")
 
     execute_code(base_url, args.token, kernel_id, code, args.timeout, args.json)
 
