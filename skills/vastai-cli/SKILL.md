@@ -77,3 +77,5 @@ Load only what is needed:
   - `references/data-transfer-playbooks.md`
 - Guardrails, risk levels, and confirmation templates:
   - `references/safety-and-preflight.md`
+- Multi-instance target disambiguation before decommission:
+  - `references/instance-lifecycle-playbooks.md` (Playbook E)

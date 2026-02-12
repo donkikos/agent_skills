@@ -7,6 +7,7 @@ This reference maps user intent to command families, using the installed CLI com
 - `--raw`: machine-readable verification output.
 - `--explain`: debug mapping from CLI call to API endpoint.
 - `--api-key`: override default key location when needed.
+- For large `--raw` payloads, project only required fields with `jq` before decisions.
 
 ## 1. Discovery and Inspection
 
@@ -74,6 +75,11 @@ Common commands:
 Immediate verification:
 
 - Verify expected command output or logs, then re-check state with `show instance --raw` if command affects runtime/storage.
+
+Key cautions:
+
+- `vastai execute` support can be constrained by CLI build; validate supported command shape with local `vastai execute --help` first.
+- `vastai logs` retrieval can be delayed; repeated "waiting on logs" is not final state and should be paired with `show ... --raw`.
 
 ## 5. Data Movement
 

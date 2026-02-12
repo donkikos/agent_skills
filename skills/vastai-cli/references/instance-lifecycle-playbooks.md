@@ -96,3 +96,34 @@ Use these playbooks for deterministic lifecycle execution with explicit checks.
 ### Recover
 
 - No rollback for destroy. Recreate using Playbook A if needed.
+
+## Playbook E: Disambiguate Target Before Destroy in Multi-Instance Fleets
+
+Use this when multiple similar instances exist and the wrong destroy would be costly.
+
+### Preflight
+
+- Enumerate candidate instances with projected fields (ID, status, public IP, key ports).
+- Capture independent runtime identity per candidate (for example via `ssh-url` plus read-only checks).
+- Require two-signal confirmation before destroy:
+  - target instance ID
+  - runtime identity match (hostname/IP/peer identity)
+
+### Execute
+
+1. Snapshot fleet:
+   - `vastai show instances --raw`
+2. If identity is ambiguous, derive runtime identity:
+   - `vastai ssh-url <INSTANCE_ID>`
+   - read-only checks such as `hostname` and service/node IP.
+3. Destroy only the confirmed target:
+   - `vastai destroy instance <INSTANCE_ID>`
+
+### Verify
+
+- `vastai show instances --raw` no longer contains the destroyed target ID.
+- If part of a larger cluster, verify external control-plane view reflects expected removal/deactivation.
+
+### Recover
+
+- If wrong target was selected, recovery is recreate-and-rejoin only (no rollback).

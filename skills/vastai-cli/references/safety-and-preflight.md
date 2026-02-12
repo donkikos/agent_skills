@@ -64,6 +64,8 @@ Default action:
    - source/destination paths for transfer
 5. For high risk:
    - require explicit confirmation before execution
+6. For destroy/decommission in mixed systems:
+   - require dual identity confirmation (instance ID plus independent runtime identity check)
 
 ## Post-Command Verification Checklist
 
@@ -71,6 +73,8 @@ Default action:
 2. Validate state transition matches expected outcome.
 3. For transfer commands, verify destination files and size stability.
 4. If mismatch, switch to recovery ladder immediately.
+5. For destroy/decommission in mixed systems:
+   - verify both Vast state (`show instances --raw`) and external system state (expected peer/device removal or deactivation).
 
 ## Recovery Ladder
 
