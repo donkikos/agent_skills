@@ -1,25 +1,40 @@
 #!/usr/bin/env python3
 import argparse
 from datetime import datetime, timezone
+import glob
 import json
 import os
 import re
 import subprocess
 import sys
 import uuid
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 
-def _add_token(url: str, token: str | None) -> str:
-    if not token:
-        return url
-    sep = "&" if "?" in url else "?"
-    return f"{url}{sep}{urlencode({'token': token})}"
+def _redact_known_secret(text: str, secret: str | None) -> str:
+    if not secret:
+        return text
+    return text.replace(secret, "<redacted>")
 
 
-def _http_get_json(url: str) -> list | dict:
-    req = Request(url, headers={"Accept": "application/json"})
+def _redact_error_text(text: str, token: str | None) -> str:
+    redacted = _redact_known_secret(text, token)
+    redacted = re.sub(r"([?&]token=)[^&\s]+", r"\1<redacted>", redacted)
+    redacted = re.sub(
+        r"(authorization\s*:\s*token\s+)[^\s]+",
+        r"\1<redacted>",
+        redacted,
+        flags=re.IGNORECASE,
+    )
+    return redacted
+
+
+def _http_get_json(url: str, token: str | None) -> list | dict:
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    req = Request(url, headers=headers)
     with urlopen(req) as resp:
         return json.load(resp)
 
@@ -87,14 +102,13 @@ def _session_matches_regex(session: dict, pattern: re.Pattern[str]) -> bool:
     return False
 
 
-def _build_ws_url(base_url: str, kernel_id: str, token: str | None) -> str:
+def _build_ws_url(base_url: str, kernel_id: str) -> str:
     parsed = urlparse(base_url)
     scheme = "wss" if parsed.scheme == "https" else "ws"
     # Preserve any base path (e.g., /user/name)
     path = parsed.path.rstrip("/")
     ws_path = f"{path}/api/kernels/{kernel_id}/channels"
-    ws_url = urlunparse((scheme, parsed.netloc, ws_path, "", "", ""))
-    return _add_token(ws_url, token)
+    return urlunparse((scheme, parsed.netloc, ws_path, "", "", ""))
 
 
 def _parse_server_list(stdout: str) -> list[dict]:
@@ -117,7 +131,110 @@ def _parse_server_list(stdout: str) -> list[dict]:
     return [entry for entry in data if isinstance(entry, dict)]
 
 
-def discover_servers(token_fallback: str | None) -> list[dict[str, str | None]]:
+def _dedupe_servers(
+    servers: list[dict[str, str | None]],
+) -> list[dict[str, str | None]]:
+    deduped: list[dict[str, str | None]] = []
+    seen: set[tuple[str, str | None]] = set()
+
+    for server in servers:
+        base_url = server.get("base_url")
+        if not isinstance(base_url, str) or not base_url:
+            continue
+
+        token = server.get("token")
+        normalized_token = token if isinstance(token, str) and token else None
+        key = (base_url, normalized_token)
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(
+            {
+                "base_url": base_url,
+                "token": normalized_token,
+                "root_dir": (
+                    server["root_dir"] if isinstance(server.get("root_dir"), str) else None
+                ),
+            }
+        )
+
+    return deduped
+
+
+def _runtime_dirs() -> list[str]:
+    dirs: list[str] = []
+    runtime_dir = os.environ.get("JUPYTER_RUNTIME_DIR")
+    if runtime_dir:
+        dirs.append(runtime_dir)
+
+    try:
+        proc = subprocess.run(
+            ["jupyter", "--paths", "--json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0:
+            payload = json.loads(proc.stdout)
+            runtime = payload.get("runtime")
+            if isinstance(runtime, list):
+                dirs.extend(entry for entry in runtime if isinstance(entry, str))
+    except Exception:  # noqa: BLE001
+        pass
+
+    dirs.append(os.path.expanduser("~/.local/share/jupyter/runtime"))
+
+    unique_dirs: list[str] = []
+    seen_dirs: set[str] = set()
+    for entry in dirs:
+        normalized = os.path.abspath(os.path.expanduser(entry))
+        if normalized in seen_dirs:
+            continue
+        seen_dirs.add(normalized)
+        unique_dirs.append(normalized)
+    return unique_dirs
+
+
+def _servers_from_runtime_files(
+    token_fallback: str | None,
+) -> list[dict[str, str | None]]:
+    servers: list[dict[str, str | None]] = []
+
+    for runtime_dir in _runtime_dirs():
+        for path in sorted(glob.glob(os.path.join(runtime_dir, "jpserver-*.json"))):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    item = json.load(f)
+            except Exception:  # noqa: BLE001
+                continue
+
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url")
+            if not isinstance(url, str) or not url:
+                continue
+
+            token = item.get("token")
+            normalized_token = token if isinstance(token, str) and token else None
+            if not normalized_token:
+                normalized_token = token_fallback
+
+            root_dir = item.get("root_dir")
+            servers.append(
+                {
+                    "base_url": _normalize_base_url(url),
+                    "token": normalized_token,
+                    "root_dir": root_dir if isinstance(root_dir, str) else None,
+                }
+            )
+
+    return servers
+
+
+def _servers_from_jupyter_list(
+    token_fallback: str | None,
+) -> list[dict[str, str | None]]:
     try:
         proc = subprocess.run(
             ["jupyter", "server", "list", "--jsonlist"],
@@ -150,12 +267,21 @@ def discover_servers(token_fallback: str | None) -> list[dict[str, str | None]]:
                 "root_dir": root_dir if isinstance(root_dir, str) else None,
             }
         )
+    return _dedupe_servers(servers)
+
+
+def discover_servers(token_fallback: str | None) -> list[dict[str, str | None]]:
+    servers = _servers_from_jupyter_list(token_fallback)
+    if not servers:
+        servers = _servers_from_runtime_files(token_fallback)
+    else:
+        servers = _dedupe_servers(servers + _servers_from_runtime_files(token_fallback))
     return servers
 
 
 def _query_sessions(base_url: str, token: str | None) -> list[dict]:
-    url = _add_token(f"{base_url}/api/sessions", token)
-    data = _http_get_json(url)
+    url = f"{base_url}/api/sessions"
+    data = _http_get_json(url, token)
     if not isinstance(data, list):
         raise RuntimeError("Unexpected /api/sessions response shape.")
     return [entry for entry in data if isinstance(entry, dict)]
@@ -174,7 +300,9 @@ def _collect_records(
         try:
             sessions = _query_sessions(base_url, token)
         except Exception as exc:  # noqa: BLE001
-            errors.append(f"{base_url}: {exc}")
+            errors.append(
+                f"{base_url}: {_redact_error_text(str(exc), token)}"
+            )
             continue
 
         for session in sessions:
@@ -295,8 +423,9 @@ def execute_code(
         )
         sys.exit(2)
 
-    ws_url = _build_ws_url(base_url, kernel_id, token)
-    ws = websocket.create_connection(ws_url)
+    ws_url = _build_ws_url(base_url, kernel_id)
+    headers = [f"Authorization: token {token}"] if token else None
+    ws = websocket.create_connection(ws_url, header=headers)
     ws.settimeout(timeout)
 
     msg_id = uuid.uuid4().hex
@@ -453,7 +582,8 @@ def main() -> None:
         servers = discover_servers(args.token)
         if not servers:
             print(
-                "No running Jupyter servers found via `jupyter server list`. "
+                "No running Jupyter servers found via `jupyter server list` "
+                "or runtime jpserver files. "
                 "Provide --base-url manually."
             )
             sys.exit(1)
