@@ -59,11 +59,17 @@ Do not block power-user workflows, but always call out irreversible effects and 
 ## Command Routing
 
 - Discovery and pricing: `search offers`, `search templates`, `show instances`
+- Standard templates: use `vastai search templates 'recommended == True' --raw` (`recommended == True` is Vast's standard/recommended set)
 - Provisioning: `create instance`, `launch instance`
 - Lifecycle: `show/start/stop/reboot/destroy`
 - Data transfer: `copy`, `cloud copy`, `cancel copy`, `cancel sync`
 - Access and debugging: `ssh-url`, `scp-url`, `logs`, `execute`
 - Identity/admin: `set/create/show/delete/reset api-key`, team/subaccount operations
+
+## Raw JSON Parsing Note
+
+- `search templates --raw` may append a trailing `null`; for reliable parsing use:
+  - `vastai search templates 'recommended == True' --raw | jq -sr '[.[] | if type=="array" then .[] else empty end]'`
 
 ## References (Progressive Disclosure)
 
