@@ -1,11 +1,11 @@
 ---
-name: exporting-session-transcripts
-description: Use when a user wants a readable or agent-friendly markdown export of a Claude Code session, conversation log, or .jsonl transcript — converting the raw session JSONL under ~/.claude/projects/ into clean markdown with user prompts, assistant text, thinking, and tool calls/results, stripping harness noise.
+name: exporting-claude-code-sessions
+description: Use when a user wants a readable or agent-friendly markdown export of a Claude Code session, conversation log, or .jsonl transcript — converting the raw Claude Code session JSONL under ~/.claude/projects/ into clean markdown with user prompts, assistant text, thinking, and tool calls/results, stripping harness noise.
 metadata:
   short-description: Export a Claude Code session .jsonl to clean markdown
 ---
 
-# Exporting Session Transcripts
+# Exporting Claude Code Sessions
 
 Claude Code records every session as a JSONL file (one event per line) under
 `~/.claude/projects/<project-slug>/<session-id>.jsonl`. This skill converts that
