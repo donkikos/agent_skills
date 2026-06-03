@@ -33,6 +33,8 @@ Use this sequence for every operation:
    - Confirm with `vastai show ... --raw` or other direct checks immediately after execution.
 5. Recover
    - If state is unexpected, follow playbook-specific fallback steps.
+- For price-sensitive decisions, set explicit `search offers` order (for example `--order dph_total_adj`) instead of relying on default ranking.
+- Treat `search offers` results as volatile snapshots; repeat the same query for high-impact actions before concluding availability.
 
 ## Command Source of Truth
 

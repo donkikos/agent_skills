@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update Changelog"
+  short_description: "Update changelogs from Git diffs"
+  default_prompt: "Use $update-changelog to update CHANGELOG.md from the relevant Git diff."

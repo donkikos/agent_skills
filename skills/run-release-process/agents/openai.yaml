@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Release Process"
+  short_description: "Guide guarded release workflows"
+  default_prompt: "Use $run-release-process to prepare and run a project release."
