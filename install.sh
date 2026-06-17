@@ -75,7 +75,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Gather available items --------------------------------------------------
-mapfile -t ALL_SKILLS < <(discover_skills)
+# Portable read loop (mapfile is unavailable on macOS's stock bash 3.2).
+ALL_SKILLS=()
+while IFS= read -r skill_line; do
+  ALL_SKILLS+=("$skill_line")
+done < <(discover_skills)
 [[ ${#ALL_SKILLS[@]} -gt 0 ]] || die "no skills found in $SKILLS_DIR"
 
 # --- --list ------------------------------------------------------------------
