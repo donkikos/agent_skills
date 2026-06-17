@@ -7,11 +7,12 @@
 #     ~/.<agent>/skills/<name> -> <repo>/skills/<name>
 #
 # Usage:
-#   ./install.sh                                  # interactive: pick agents, then skills
+#   ./install.sh                                  # preview all skills into all agents
+#   ./install.sh --yes                            # apply all skills into all agents
+#   ./install.sh --yes --agents codex --skills update-changelog
 #   ./install.sh --agents claude,codex --skills update-changelog,vastai-cli
-#   ./install.sh --all                            # all skills into all agents
 #   ./install.sh --list                           # list discovered skills + agent targets
-#   ./install.sh -n | --dry-run                   # show actions without creating symlinks
+#   ./install.sh -n | --dry-run                   # preview without creating symlinks
 #
 set -euo pipefail
 
@@ -54,7 +55,7 @@ SEL_AGENTS=""
 SEL_SKILLS=""
 WANT_ALL=0
 DO_LIST=0
-DRY_RUN=0
+APPLY=0
 
 usage() {
   sed -n '3,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -67,8 +68,9 @@ while [[ $# -gt 0 ]]; do
     --skills) SEL_SKILLS="${2:-}"; shift 2 ;;
     --skills=*) SEL_SKILLS="${1#*=}"; shift ;;
     --all) WANT_ALL=1; shift ;;
+    --yes) APPLY=1; shift ;;
     --list) DO_LIST=1; shift ;;
-    -n|--dry-run) DRY_RUN=1; shift ;;
+    -n|--dry-run) APPLY=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1 (try --help)" ;;
   esac
@@ -92,41 +94,18 @@ if [[ $DO_LIST -eq 1 ]]; then
 fi
 
 # --- Selection helpers -------------------------------------------------------
-# Render a numbered menu and read a multi-select choice into the named array.
-# Accepts space/comma-separated numbers, or "all". Empty input aborts.
-select_menu() {
-  local prompt="$1" out_name="$2"; shift 2
-  local items=("$@") i choice tok picked=()
-  printf '%s\n' "$prompt" >&2
-  for i in "${!items[@]}"; do
-    printf '  %2d) %s\n' "$((i + 1))" "${items[$i]}" >&2
-  done
-  printf '%sSelect numbers (e.g. 1 3 5), "all", or blank to cancel:%s ' "$C_DIM" "$C_RST" >&2
-  read -r choice
-  [[ -n "${choice// /}" ]] || die "nothing selected"
-  if [[ "$choice" == "all" ]]; then
-    picked=("${items[@]}")
-  else
-    for tok in ${choice//,/ }; do
-      [[ "$tok" =~ ^[0-9]+$ ]] || die "invalid selection: $tok"
-      (( tok >= 1 && tok <= ${#items[@]} )) || die "out of range: $tok"
-      picked+=("${items[$((tok - 1))]}")
-    done
-  fi
-  # shellcheck disable=SC2034
-  eval "$out_name=(\"\${picked[@]}\")"
-}
-
 # Validate a comma-separated list against allowed values; fill named array.
 parse_csv_into() {
   local csv="$1" out_name="$2"; shift 2
   local allowed=("$@") tok found result=()
   for tok in ${csv//,/ }; do
+    [[ -n "$tok" ]] || continue
     found=0
     for a in "${allowed[@]}"; do [[ "$a" == "$tok" ]] && found=1 && break; done
     [[ $found -eq 1 ]] || die "unknown: '$tok' (valid: ${allowed[*]})"
     result+=("$tok")
   done
+  [[ ${#result[@]} -gt 0 ]] || die "nothing selected"
   eval "$out_name=(\"\${result[@]}\")"
 }
 
@@ -141,17 +120,14 @@ else
   # Agents
   if [[ -n "$SEL_AGENTS" ]]; then
     parse_csv_into "$SEL_AGENTS" AGENTS "${AGENT_NAMES[@]}"
-  elif [[ -n "$SEL_SKILLS" ]]; then
-    # skills given but not agents -> default to all agents non-interactively
-    AGENTS=("${AGENT_NAMES[@]}")
   else
-    select_menu "Which agents?" AGENTS "${AGENT_NAMES[@]}"
+    AGENTS=("${AGENT_NAMES[@]}")
   fi
   # Skills
   if [[ -n "$SEL_SKILLS" ]]; then
     parse_csv_into "$SEL_SKILLS" SKILLS "${ALL_SKILLS[@]}"
   else
-    select_menu "Which skills?" SKILLS "${ALL_SKILLS[@]}"
+    SKILLS=("${ALL_SKILLS[@]}")
   fi
 fi
 
@@ -180,7 +156,7 @@ link_one() {
     ((n_skipped++)); return 0
   fi
 
-  if [[ $DRY_RUN -eq 1 ]]; then
+  if [[ $APPLY -eq 0 ]]; then
     printf '[%s] %-32s %swould install%s -> %s\n' "$agent" "$skill" "$C_DIM" "$C_RST" "$target"
     ((n_installed++)); return 0
   fi
@@ -197,7 +173,10 @@ link_one() {
   ((n_failed++)); return 1
 }
 
-[[ $DRY_RUN -eq 1 ]] && printf '%s(dry run — no changes made)%s\n' "$C_DIM" "$C_RST"
+if [[ $APPLY -eq 0 ]]; then
+  printf '%s(dry run - no changes made)%s\n' "$C_DIM" "$C_RST"
+  printf '%sUse --yes to apply these changes.%s\n' "$C_DIM" "$C_RST"
+fi
 
 for agent in "${AGENTS[@]}"; do
   for skill in "${SKILLS[@]}"; do
@@ -205,7 +184,12 @@ for agent in "${AGENTS[@]}"; do
   done
 done
 
-printf '\n%sDone.%s installed=%d skipped=%d failed=%d\n' \
-  "$C_GRN" "$C_RST" "$n_installed" "$n_skipped" "$n_failed"
+if [[ $APPLY -eq 0 ]]; then
+  printf '\n%sDone.%s planned=%d skipped=%d failed=%d\n' \
+    "$C_GRN" "$C_RST" "$n_installed" "$n_skipped" "$n_failed"
+else
+  printf '\n%sDone.%s installed=%d skipped=%d failed=%d\n' \
+    "$C_GRN" "$C_RST" "$n_installed" "$n_skipped" "$n_failed"
+fi
 
 [[ $n_failed -eq 0 ]] || exit 1
